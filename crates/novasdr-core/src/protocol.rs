@@ -57,6 +57,15 @@ pub enum ClientCommand {
     Mute {
         mute: bool,
     },
+    AudioOverride {
+        enabled: bool,
+        #[serde(default)]
+        l: Option<i32>,
+        #[serde(default)]
+        r: Option<i32>,
+        #[serde(default)]
+        m: Option<f64>,
+    },
     Squelch {
         enabled: bool,
     },

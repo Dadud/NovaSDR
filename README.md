@@ -186,6 +186,10 @@ sudo ldconfig # Debian/Ubuntu
 SoapySDRUtil --info
 ```
 
+> [!NOTE]
+> SDRplay devices are supported via the SoapySDRPlay module, which requires SDRplay's proprietary API
+> (`docs/INSTALL.md` has the installer helper). Verify it with `SoapySDRUtil --probe="driver=sdrplay"`.
+
 ## Device examples
 
 ### SoapySDR (recommended)
@@ -208,6 +212,18 @@ If you prefer to write `config/receivers.json` manually, an RTL-SDR example look
   "gain": 35.0,
   "gains": { "LNA": 30.0 },
   "settings": { "biastee": "true" }
+}
+```
+
+### SDRplay (SoapySDRPlay)
+
+```json
+{
+  "kind": "soapysdr",
+  "device": "driver=sdrplay",
+  "channel": 0,
+  "format": "cs16",
+  "agc": true
 }
 ```
 

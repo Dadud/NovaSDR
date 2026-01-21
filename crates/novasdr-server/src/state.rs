@@ -110,6 +110,9 @@ pub struct AppState {
     pub active_receiver: Arc<ReceiverState>,
     pub markers: Arc<RwLock<serde_json::Value>>,
     pub bands: Arc<RwLock<serde_json::Value>>,
+    pub scanlists: Arc<RwLock<serde_json::Value>>,
+    pub trunking: Arc<RwLock<serde_json::Value>>,
+    pub decoders: Arc<RwLock<serde_json::Value>>,
     pub header_panel: Arc<RwLock<HeaderPanelOverlay>>,
 
     pub event_clients: DashMap<ClientId, mpsc::Sender<Arc<str>>>,
@@ -150,6 +153,9 @@ impl AppState {
             active_receiver,
             markers: Arc::new(RwLock::new(serde_json::Value::Null)),
             bands: Arc::new(RwLock::new(serde_json::Value::Null)),
+            scanlists: Arc::new(RwLock::new(serde_json::Value::Null)),
+            trunking: Arc::new(RwLock::new(serde_json::Value::Null)),
+            decoders: Arc::new(RwLock::new(serde_json::Value::Null)),
             header_panel: Arc::new(RwLock::new(HeaderPanelOverlay::default())),
             event_clients: DashMap::new(),
             chat_clients: DashMap::new(),
@@ -227,6 +233,12 @@ impl AppState {
         let markers_str = json_stringify_value(&markers);
         let bands = self.bands.read().await;
         let bands_str = json_stringify_value(&bands);
+        let scanlists = self.scanlists.read().await;
+        let scanlists_str = json_stringify_value(&scanlists);
+        let trunking = self.trunking.read().await;
+        let trunking_str = json_stringify_value(&trunking);
+        let decoders = self.decoders.read().await;
+        let decoders_str = json_stringify_value(&decoders);
 
         let ssb_lowcut_hz = receiver
             .receiver
@@ -275,6 +287,9 @@ impl AppState {
             "smeter_offset": receiver.receiver.input.smeter_offset,
             "markers": markers_str,
             "bands": bands_str,
+            "scanlists": scanlists_str,
+            "trunking": trunking_str,
+            "decoders": decoders_str,
         });
 
         match serde_json::to_string(&out) {
@@ -394,6 +409,7 @@ pub struct AudioClient {
     pub tx: mpsc::Sender<Vec<u8>>,
     pub params: std::sync::Mutex<AudioParams>,
     pub pipeline: std::sync::Mutex<crate::ws::audio::AudioPipeline>,
+    pub audio_tap: Option<AudioTap>,
 }
 
 #[derive(Debug, Clone)]
@@ -401,12 +417,69 @@ pub struct AudioParams {
     pub l: i32,
     pub m: f64,
     pub r: i32,
+    pub visual_l: i32,
+    pub visual_m: f64,
+    pub visual_r: i32,
+    pub audio_override: bool,
     pub mute: bool,
     pub squelch_enabled: bool,
     pub demodulation: novasdr_core::dsp::demod::DemodulationMode,
     pub agc_speed: AgcSpeed,
     pub agc_attack_ms: Option<f32>,
     pub agc_release_ms: Option<f32>,
+}
+
+pub struct AudioTap {
+    socket: std::net::UdpSocket,
+    addr: std::net::SocketAddr,
+}
+
+impl AudioTap {
+    pub fn new(addr: std::net::SocketAddr) -> anyhow::Result<Self> {
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0")?;
+        socket.set_nonblocking(true)?;
+        Ok(Self { socket, addr })
+    }
+
+    pub fn send(&self, samples: &[i16]) {
+        if samples.is_empty() {
+            return;
+        }
+        let bytes = bytemuck::cast_slice(samples);
+        match self.socket.send_to(bytes, self.addr) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(err) => {
+                tracing::warn!(error = ?err, "audio tap send failed");
+            }
+        }
+    }
+}
+
+impl AudioParams {
+    pub fn set_visual_window(&mut self, l: i32, m: f64, r: i32) {
+        self.visual_l = l;
+        self.visual_m = m;
+        self.visual_r = r;
+        if !self.audio_override {
+            self.l = l;
+            self.m = m;
+            self.r = r;
+        }
+    }
+
+    pub fn set_audio_override(&mut self, enabled: bool, l: i32, m: f64, r: i32) {
+        self.audio_override = enabled;
+        if enabled {
+            self.l = l;
+            self.m = m;
+            self.r = r;
+        } else {
+            self.l = self.visual_l;
+            self.m = self.visual_m;
+            self.r = self.visual_r;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -584,6 +657,92 @@ async fn maybe_load_header_panel(path: &Path) -> Option<HeaderPanelOverlay> {
     serde_json::from_str::<HeaderPanelOverlay>(&raw).ok()
 }
 
+async fn load_trunking_overlay(overlays_dir: &Path) -> Option<serde_json::Value> {
+    let path = overlays_dir.join("trunking.json");
+    let raw = tokio::fs::read_to_string(&path).await.ok()?;
+    let mut value = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
+    let Some(imports) = value.get("imports").and_then(|v| v.as_array()) else {
+        return Some(value);
+    };
+    let Some(obj) = value.as_object_mut() else {
+        return Some(value);
+    };
+
+    for import in imports {
+        let Some(import_obj) = import.as_object() else {
+            continue;
+        };
+        let kind = import_obj
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        let path_str = import_obj
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        if kind.is_empty() || path_str.is_empty() {
+            continue;
+        }
+        let import_path = Path::new(path_str);
+        let resolved = if import_path.is_absolute() {
+            import_path.to_path_buf()
+        } else {
+            overlays_dir.join(import_path)
+        };
+        let Ok(csv_raw) = tokio::fs::read_to_string(&resolved).await else {
+            tracing::warn!(path = %resolved.display(), "failed to read trunking import");
+            continue;
+        };
+        let parsed = match parse_csv_records(&csv_raw) {
+            Ok(v) => v,
+            Err(err) => {
+                tracing::warn!(
+                    error = ?err,
+                    path = %resolved.display(),
+                    "failed to parse trunking import csv"
+                );
+                continue;
+            }
+        };
+        let key = match kind {
+            "sites" => "sites",
+            "talkgroups" => "talkgroups",
+            _ => {
+                tracing::warn!(kind, "unknown trunking import kind");
+                continue;
+            }
+        };
+        match obj.get_mut(key) {
+            Some(serde_json::Value::Array(existing)) => {
+                existing.extend(parsed);
+            }
+            _ => {
+                obj.insert(key.to_string(), serde_json::Value::Array(parsed));
+            }
+        }
+    }
+
+    Some(value)
+}
+
+fn parse_csv_records(raw: &str) -> Result<Vec<serde_json::Value>, csv::Error> {
+    let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(raw.as_bytes());
+    let headers = rdr.headers()?.clone();
+    let mut out = Vec::new();
+    for record in rdr.records() {
+        let record = record?;
+        let mut map = serde_json::Map::new();
+        for (idx, header) in headers.iter().enumerate() {
+            let value = record.get(idx).unwrap_or("");
+            map.insert(header.to_string(), serde_json::Value::String(value.to_string()));
+        }
+        out.push(serde_json::Value::Object(map));
+    }
+    Ok(out)
+}
+
 pub async fn load_overlays_once(state: Arc<AppState>, overlays_dir: std::path::PathBuf) {
     let markers_path = overlays_dir.join("markers.json");
     if let Some(v) = maybe_load_json(&markers_path).await {
@@ -594,6 +753,23 @@ pub async fn load_overlays_once(state: Arc<AppState>, overlays_dir: std::path::P
     let bands_path = overlays_dir.join("bands.json");
     if let Some(v) = maybe_load_json(&bands_path).await {
         let mut cur = state.bands.write().await;
+        *cur = v;
+    }
+
+    let scanlists_path = overlays_dir.join("scanlists.json");
+    if let Some(v) = maybe_load_json(&scanlists_path).await {
+        let mut cur = state.scanlists.write().await;
+        *cur = v;
+    }
+
+    if let Some(v) = load_trunking_overlay(&overlays_dir).await {
+        let mut cur = state.trunking.write().await;
+        *cur = v;
+    }
+
+    let decoders_path = overlays_dir.join("decoders.json");
+    if let Some(v) = maybe_load_json(&decoders_path).await {
+        let mut cur = state.decoders.write().await;
         *cur = v;
     }
 
@@ -625,6 +801,50 @@ pub fn spawn_bands_watcher(state: Arc<AppState>, overlays_dir: std::path::PathBu
             let path = overlays_dir.join("bands.json");
             if let Some(v) = maybe_load_json(&path).await {
                 let mut cur = state.bands.write().await;
+                if *cur != v {
+                    *cur = v;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        }
+    });
+}
+
+pub fn spawn_scanlists_watcher(state: Arc<AppState>, overlays_dir: std::path::PathBuf) {
+    tokio::spawn(async move {
+        loop {
+            let path = overlays_dir.join("scanlists.json");
+            if let Some(v) = maybe_load_json(&path).await {
+                let mut cur = state.scanlists.write().await;
+                if *cur != v {
+                    *cur = v;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        }
+    });
+}
+
+pub fn spawn_trunking_watcher(state: Arc<AppState>, overlays_dir: std::path::PathBuf) {
+    tokio::spawn(async move {
+        loop {
+            if let Some(v) = load_trunking_overlay(&overlays_dir).await {
+                let mut cur = state.trunking.write().await;
+                if *cur != v {
+                    *cur = v;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        }
+    });
+}
+
+pub fn spawn_decoders_watcher(state: Arc<AppState>, overlays_dir: std::path::PathBuf) {
+    tokio::spawn(async move {
+        loop {
+            let path = overlays_dir.join("decoders.json");
+            if let Some(v) = maybe_load_json(&path).await {
+                let mut cur = state.decoders.write().await;
                 if *cur != v {
                     *cur = v;
                 }

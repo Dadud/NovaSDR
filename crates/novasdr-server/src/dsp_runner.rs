@@ -613,8 +613,13 @@ fn send_audio(
             }
         };
         match pipeline.process(slice, frame_num, &params, ctx.rt.is_real, audio_mid_idx) {
-            Ok(pkts) => {
-                for pkt in pkts {
+            Ok(output) => {
+                if let Some(tap) = entry.audio_tap.as_ref() {
+                    for frame in &output.tap_frames {
+                        tap.send(frame);
+                    }
+                }
+                for pkt in output.packets {
                     ctx.state
                         .total_audio_bits
                         .fetch_add(pkt.len() * 8, Ordering::Relaxed);

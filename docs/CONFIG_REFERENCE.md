@@ -10,6 +10,9 @@ If the files are missing, NovaSDR creates defaults on startup (empty markers; a 
 
 - `config/overlays/markers.json`: static frequency markers shown in the UI
 - `config/overlays/bands.json`: band plan overlays and "jump to band" entries
+- `config/overlays/scanlists.json`: scanlists for scanner-style clients
+- `config/overlays/trunking.json`: trunking metadata and imports for scanner-style clients
+- `config/overlays/decoders.json`: decoder registry for digital modes
 
 ## `config/config.json`
 
@@ -121,6 +124,7 @@ Each entry in `receivers[]`:
 | `audio_compression` | `"adpcm"` | no | Supported: `adpcm` |
 | `accelerator` | `"none"` \| `"clfft"` \| `"vkfft"` | no | `clfft` requires building with `--features clfft`; `vkfft` requires building with `--features vkfft` |
 | `smeter_offset` | int | no | UI-only offset |
+| `audio_tap` | object | no | Optional UDP audio tap for external digital decoders/trunking tools |
 
 ### `receivers[].input.driver`
 
@@ -134,6 +138,22 @@ Constraints:
 - Only one receiver may use `{"kind": "stdin", ...}`.
 
 Supported `format` values: `u8`, `s8`, `u16`, `s16`, `cs16`, `f32`, `cf32`, `f64`.
+
+### `receivers[].input.audio_tap`
+
+Optional UDP sink for demodulated audio, useful for external digital decoding (DSD+, OP25, etc.)
+and trunk tracking. The tap receives signed 16-bit mono PCM at the receiver `audio_sps` rate.
+
+| Key | Type | Default | Notes |
+|---|---:|---:|---|
+| `enabled` | bool | `false` | Enables the UDP audio tap |
+| `udp_addr` | string | `"127.0.0.1:7355"` | Target address for raw PCM |
+
+Example:
+
+```json
+"audio_tap": { "enabled": true, "udp_addr": "127.0.0.1:7355" }
+```
 
 #### SoapySDR driver options
 
@@ -171,6 +191,7 @@ Default audio window shapes (derived from `defaults.modulation`):
 
 This file is optional. When present, the UI uses it for band overlays and the band jump menu.
 Location: `config/overlays/bands.json` next to `config/config.json`.
+The default file includes ham bands plus common public safety scan ranges (VHF/UHF/700/800) as a starting point.
 
 Supported shapes:
 
@@ -178,6 +199,67 @@ Supported shapes:
 - Object wrapper: `{ "bands": [ ... ] }`
 
 Only `name`, `startHz`, and `endHz` are required. `color` is optional.
+
+## `scanlists.json`
+
+This file is optional. When present, the UI can use it to define scanlists and channels.
+Location: `config/overlays/scanlists.json` next to `config/config.json`.
+
+Suggested schema:
+
+```json
+{
+  "scanlists": [
+    {
+      "name": "Local Public Safety",
+      "dwell_ms": 800,
+      "channels": [
+        { "frequency": 154190000, "mode": "FM", "label": "Fire Dispatch" },
+        { "frequency": 155370000, "mode": "FM", "label": "EMS" }
+      ]
+    }
+  ]
+}
+```
+
+## `trunking.json`
+
+This file is optional. When present, the UI can use it for trunked system metadata and import
+definitions (for example, CSV exports from RadioReference).
+Location: `config/overlays/trunking.json` next to `config/config.json`.
+
+Suggested schema:
+
+```json
+{
+  "imports": [
+    { "kind": "sites", "path": "rr-sites.csv" },
+    { "kind": "talkgroups", "path": "rr-talkgroups.csv" }
+  ],
+  "sites": [],
+  "talkgroups": []
+}
+```
+
+CSV imports are parsed by header name and stored as arrays of objects under `sites` or
+`talkgroups`. Relative paths are resolved relative to `config/overlays/`.
+
+## `decoders.json`
+
+This file is optional. When present, the UI can use it to advertise which digital decoders
+are available and how they should be wired (built-in vs external).
+Location: `config/overlays/decoders.json` next to `config/config.json`.
+
+Suggested schema:
+
+```json
+{
+  "decoders": [
+    { "id": "ft8", "label": "FT8", "type": "builtin", "modes": ["FT8", "FT4"] },
+    { "id": "psk", "label": "PSK/RTTY", "type": "external", "modes": ["PSK31", "RTTY"], "udp_addr": "127.0.0.1:7355" }
+  ]
+}
+```
 
 ## `markers.json`
 

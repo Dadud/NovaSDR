@@ -15,13 +15,19 @@ If the files are missing, NovaSDR creates defaults on startup (empty markers; a 
 
 - `config/overlays/markers.json` (UI markers; hot-reloaded about once per minute)
 - `config/overlays/bands.json` (band plan overlays and band jump list; hot-reloaded about once per minute)
+- `config/overlays/scanlists.json` (scanlists for scanner-style clients; hot-reloaded about once per minute)
+- `config/overlays/trunking.json` (optional trunking metadata + imports; hot-reloaded about once per minute)
+- `config/overlays/decoders.json` (decoder registry for scanner/digital modes; hot-reloaded about once per minute)
 
 You can edit/reset these overlays from the setup wizard (`setup` / `configure`), or by editing the files directly.
+
+The default band plan includes ham bands plus common public safety scan ranges (VHF/UHF/700/800) as a starting point.
 
 The Rust backend supports:
 - `receivers[].input.waterfall_compression = "zstd"`
 - `receivers[].input.audio_compression = "adpcm"`
 - `receivers[].input.accelerator = "none"` (or `clfft` with the `clfft` feature; or `vkfft` with the `vkfft` feature)
+- Optional `receivers[].input.audio_tap` to stream demodulated PCM over UDP for external digital decoders or trunking tools.
 
 ## Online listing registration
 
@@ -69,6 +75,7 @@ If NovaSDR is running behind a reverse proxy (for example terminating HTTPS on p
         "audio_compression": "adpcm",
         "accelerator": "none",
         "smeter_offset": 0,
+        "audio_tap": { "enabled": false, "udp_addr": "127.0.0.1:7355" },
         "driver": { "kind": "stdin", "format": "u8" },
         "defaults": { "frequency": -1, "modulation": "USB", "squelch_enabled": false }
       }

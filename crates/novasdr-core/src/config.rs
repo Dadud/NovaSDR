@@ -102,9 +102,19 @@ pub struct ReceiverInput {
     pub smeter_offset: i32,
     #[serde(default)]
     pub accelerator: Accelerator,
+    #[serde(default)]
+    pub audio_tap: Option<AudioTapConfig>,
     pub driver: InputDriver,
     #[serde(default)]
     pub defaults: ReceiverDefaults,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AudioTapConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_audio_tap_addr")]
+    pub udp_addr: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -290,6 +300,10 @@ fn default_waterfall_compression() -> WaterfallCompression {
 }
 fn default_audio_compression() -> AudioCompression {
     AudioCompression::Adpcm
+}
+
+fn default_audio_tap_addr() -> String {
+    "127.0.0.1:7355".to_string()
 }
 fn default_default_frequency() -> i64 {
     -1
