@@ -307,6 +307,9 @@ fn main() -> anyhow::Result<()> {
             state::load_overlays_once(state.clone(), overlays.dir.clone()).await;
             state::spawn_marker_watcher(state.clone(), overlays.dir.clone());
             state::spawn_bands_watcher(state.clone(), overlays.dir.clone());
+            state::spawn_scanlists_watcher(state.clone(), overlays.dir.clone());
+            state::spawn_trunking_watcher(state.clone(), overlays.dir.clone());
+            state::spawn_decoders_watcher(state.clone(), overlays.dir.clone());
             state::spawn_header_panel_watcher(state.clone(), overlays.dir);
             registration::spawn(state.clone());
             update_check::spawn(state.clone());

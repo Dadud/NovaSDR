@@ -386,6 +386,10 @@ async fn handle(socket: ws::WebSocket, state: Arc<AppState>, _ip_guard: crate::s
         l: receiver.rt.default_l,
         m: receiver.rt.default_m,
         r: receiver.rt.default_r,
+        visual_l: receiver.rt.default_l,
+        visual_m: receiver.rt.default_m,
+        visual_r: receiver.rt.default_r,
+        audio_override: false,
         mute: false,
         squelch_enabled: receiver.receiver.input.defaults.squelch_enabled,
         demodulation: DemodulationMode::from_str_upper(receiver.rt.default_mode_str.as_str())
@@ -394,11 +398,32 @@ async fn handle(socket: ws::WebSocket, state: Arc<AppState>, _ip_guard: crate::s
         agc_attack_ms: None,
         agc_release_ms: None,
     };
+    let audio_tap = receiver
+        .receiver
+        .input
+        .audio_tap
+        .as_ref()
+        .filter(|tap| tap.enabled)
+        .and_then(|tap| match tap.udp_addr.parse() {
+            Ok(addr) => match crate::state::AudioTap::new(addr) {
+                Ok(tap) => Some(tap),
+                Err(err) => {
+                    tracing::warn!(error = ?err, "failed to initialize audio tap");
+                    None
+                }
+            },
+            Err(err) => {
+                tracing::warn!(error = ?err, "invalid audio tap udp_addr");
+                None
+            }
+        });
+
     let client = Arc::new(AudioClient {
         unique_id: unique_id.clone(),
         tx,
         params: std::sync::Mutex::new(params),
         pipeline: std::sync::Mutex::new(pipeline),
+        audio_tap,
     });
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
@@ -475,9 +500,17 @@ async fn handle(socket: ws::WebSocket, state: Arc<AppState>, _ip_guard: crate::s
                                 &unique_id,
                             );
                             if let Ok(mut p) = client.params.lock() {
-                                p.l = receiver.rt.default_l;
-                                p.m = receiver.rt.default_m;
-                                p.r = receiver.rt.default_r;
+                                p.set_visual_window(
+                                    receiver.rt.default_l,
+                                    receiver.rt.default_m,
+                                    receiver.rt.default_r,
+                                );
+                                p.set_audio_override(
+                                    false,
+                                    receiver.rt.default_l,
+                                    receiver.rt.default_m,
+                                    receiver.rt.default_r,
+                                );
                                 p.mute = false;
                                 p.squelch_enabled =
                                     receiver.receiver.input.defaults.squelch_enabled;
@@ -549,9 +582,17 @@ async fn handle(socket: ws::WebSocket, state: Arc<AppState>, _ip_guard: crate::s
                                     poisoned.into_inner()
                                 }
                             };
-                            p.l = receiver.rt.default_l;
-                            p.m = receiver.rt.default_m;
-                            p.r = receiver.rt.default_r;
+                            p.set_visual_window(
+                                receiver.rt.default_l,
+                                receiver.rt.default_m,
+                                receiver.rt.default_r,
+                            );
+                            p.set_audio_override(
+                                false,
+                                receiver.rt.default_l,
+                                receiver.rt.default_m,
+                                receiver.rt.default_r,
+                            );
                             p.demodulation = DemodulationMode::from_str_upper(
                                 receiver.rt.default_mode_str.as_str(),
                             )
@@ -642,9 +683,7 @@ fn apply_command(
                     poisoned.into_inner()
                 }
             };
-            p.l = l;
-            p.r = r;
-            p.m = m;
+            p.set_visual_window(l, m, r);
             state.broadcast_signal_changes(receiver_id, &client.unique_id, l, m, r);
         }
         novasdr_core::protocol::ClientCommand::Demodulation { demodulation } => {
@@ -685,6 +724,34 @@ fn apply_command(
                 }
             };
             p.mute = mute;
+        }
+        novasdr_core::protocol::ClientCommand::AudioOverride { enabled, l, r, m } => {
+            let (l, r, m) = if enabled {
+                let (Some(l), Some(r), Some(m)) = (l, r, m) else {
+                    return;
+                };
+                if l < 0 || r < 0 || l > r || r as usize >= rt.fft_result_size {
+                    return;
+                }
+                let audio_fft_size = rt.audio_max_fft_size as i32;
+                if r - l > audio_fft_size {
+                    return;
+                }
+                (l, r, m)
+            } else {
+                (0, 0, 0.0)
+            };
+            let mut p = match client.params.lock() {
+                Ok(g) => g,
+                Err(poisoned) => {
+                    tracing::error!(
+                        unique_id = %client.unique_id,
+                        "audio params mutex poisoned; recovering"
+                    );
+                    poisoned.into_inner()
+                }
+            };
+            p.set_audio_override(enabled, l, m, r);
         }
         novasdr_core::protocol::ClientCommand::Squelch { enabled } => {
             let mut p = match client.params.lock() {
@@ -816,6 +883,12 @@ pub struct AudioPipeline {
     squelch: SquelchState,
 }
 
+#[derive(Default)]
+pub struct AudioProcessOutput {
+    pub packets: Vec<Vec<u8>>,
+    pub tap_frames: Vec<Vec<i16>>,
+}
+
 impl AudioPipeline {
     pub fn new(
         sample_rate: usize,
@@ -894,17 +967,17 @@ impl AudioPipeline {
         params: &AudioParams,
         is_real_input: bool,
         audio_mid_idx: i32,
-    ) -> anyhow::Result<Vec<Vec<u8>>> {
-        let mut out_packets = Vec::new();
+    ) -> anyhow::Result<AudioProcessOutput> {
+        let mut output = AudioProcessOutput::default();
         if params.mute {
-            return Ok(out_packets);
+            return Ok(output);
         }
 
         let features = squelch_features(spectrum_slice);
         let squelch_open = self.squelch.update(params.squelch_enabled, features);
         if params.squelch_enabled && !squelch_open {
             self.reset_for_squelch_gate();
-            return Ok(out_packets);
+            return Ok(output);
         }
 
         let len = spectrum_slice.len() as i32;
@@ -1097,7 +1170,7 @@ impl AudioPipeline {
             self.pwr_frames = 0;
 
             let payload = ima_adpcm::encode_block_i16_mono(block);
-            out_packets.push(build_audio_frame(
+            output.packets.push(build_audio_frame(
                 AudioWireCodec::AdpcmIma,
                 frame_num,
                 0,
@@ -1106,13 +1179,14 @@ impl AudioPipeline {
                 pwr,
                 &payload,
             ));
+            output.tap_frames.push(block.to_vec());
 
             if self.pcm_accum_offset >= self.packet_samples * 4 {
                 self.pcm_accum_i16.drain(0..self.pcm_accum_offset);
                 self.pcm_accum_offset = 0;
             }
         }
-        Ok(out_packets)
+        Ok(output)
     }
 
     fn apply_agc_settings(&mut self, params: &AudioParams) {

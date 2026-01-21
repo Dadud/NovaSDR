@@ -322,6 +322,28 @@
       ]
     },
     {
+      "name": "Public Safety VHF (150-174 MHz)",
+      "startHz": 150000000,
+      "endHz": 174000000,
+      "startFreq": 150000000,
+      "endFreq": 174000000,
+      "color": "rgba(37, 99, 235, 0.55)",
+      "modes": [
+        { "mode": "FM", "startHz": 150000000, "endHz": 174000000, "startFreq": 150000000, "endFreq": 174000000 }
+      ]
+    },
+    {
+      "name": "1.25M HAM",
+      "startHz": 222000000,
+      "endHz": 225000000,
+      "startFreq": 222000000,
+      "endFreq": 225000000,
+      "color": "rgba(50, 168, 72, 0.6)",
+      "modes": [
+        { "mode": "FM", "startHz": 222000000, "endHz": 225000000, "startFreq": 222000000, "endFreq": 225000000 }
+      ]
+    },
+    {
       "name": "70CM HAM",
       "startHz": 430000000,
       "endHz": 440000000,
@@ -332,6 +354,61 @@
         { "mode": "CW", "startHz": 430000000, "endHz": 430100000, "startFreq": 430000000, "endFreq": 430100000 },
         { "mode": "USB", "startHz": 430100000, "endHz": 432100000, "startFreq": 430100000, "endFreq": 432100000 },
         { "mode": "FM", "startHz": 432100000, "endHz": 440000000, "startFreq": 432100000, "endFreq": 440000000 }
+      ]
+    },
+    {
+      "name": "Public Safety UHF (450-470 MHz)",
+      "startHz": 450000000,
+      "endHz": 470000000,
+      "startFreq": 450000000,
+      "endFreq": 470000000,
+      "color": "rgba(37, 99, 235, 0.55)",
+      "modes": [
+        { "mode": "FM", "startHz": 450000000, "endHz": 470000000, "startFreq": 450000000, "endFreq": 470000000 }
+      ]
+    },
+    {
+      "name": "Public Safety 700 (769-775 MHz)",
+      "startHz": 769000000,
+      "endHz": 775000000,
+      "startFreq": 769000000,
+      "endFreq": 775000000,
+      "color": "rgba(37, 99, 235, 0.55)",
+      "modes": [
+        { "mode": "FM", "startHz": 769000000, "endHz": 775000000, "startFreq": 769000000, "endFreq": 775000000 }
+      ]
+    },
+    {
+      "name": "Public Safety 800 (851-869 MHz)",
+      "startHz": 851000000,
+      "endHz": 869000000,
+      "startFreq": 851000000,
+      "endFreq": 869000000,
+      "color": "rgba(37, 99, 235, 0.55)",
+      "modes": [
+        { "mode": "FM", "startHz": 851000000, "endHz": 869000000, "startFreq": 851000000, "endFreq": 869000000 }
+      ]
+    },
+    {
+      "name": "33CM HAM",
+      "startHz": 902000000,
+      "endHz": 928000000,
+      "startFreq": 902000000,
+      "endFreq": 928000000,
+      "color": "rgba(50, 168, 72, 0.6)",
+      "modes": [
+        { "mode": "FM", "startHz": 902000000, "endHz": 928000000, "startFreq": 902000000, "endFreq": 928000000 }
+      ]
+    },
+    {
+      "name": "23CM HAM",
+      "startHz": 1240000000,
+      "endHz": 1300000000,
+      "startFreq": 1240000000,
+      "endFreq": 1300000000,
+      "color": "rgba(50, 168, 72, 0.6)",
+      "modes": [
+        { "mode": "FM", "startHz": 1240000000, "endHz": 1300000000, "startFreq": 1240000000, "endFreq": 1300000000 }
       ]
     }
   ]

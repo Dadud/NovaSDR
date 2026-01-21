@@ -10,6 +10,9 @@ pub struct OverlayPaths {
     pub dir: PathBuf,
     pub markers: PathBuf,
     pub bands: PathBuf,
+    pub scanlists: PathBuf,
+    pub trunking: PathBuf,
+    pub decoders: PathBuf,
     pub header_panel: PathBuf,
 }
 
@@ -22,6 +25,9 @@ pub fn overlay_paths_for_config(config_path: &Path) -> OverlayPaths {
     OverlayPaths {
         markers: dir.join("markers.json"),
         bands: dir.join("bands.json"),
+        scanlists: dir.join("scanlists.json"),
+        trunking: dir.join("trunking.json"),
+        decoders: dir.join("decoders.json"),
         header_panel: dir.join("header_panel.json"),
         dir,
     }
@@ -40,6 +46,12 @@ pub fn ensure_default_overlays(config_path: &Path) -> anyhow::Result<OverlayPath
         &default_bands_value().context("load default bands")?,
     )
     .context("ensure overlays bands.json")?;
+    write_json_if_missing(&paths.scanlists, &default_scanlists_value())
+        .context("ensure overlays scanlists.json")?;
+    write_json_if_missing(&paths.trunking, &default_trunking_value())
+        .context("ensure overlays trunking.json")?;
+    write_json_if_missing(&paths.decoders, &default_decoders_value())
+        .context("ensure overlays decoders.json")?;
 
     write_json_if_missing(&paths.header_panel, &default_header_panel_value())
         .context("ensure overlays header_panel.json")?;
@@ -59,6 +71,18 @@ pub fn default_bands_value() -> anyhow::Result<serde_json::Value> {
         .and_then(|b| b.as_array())
         .ok_or_else(|| anyhow::anyhow!("default bands json: expected {{\"bands\": [...]}}"))?;
     Ok(v)
+}
+
+pub fn default_scanlists_value() -> serde_json::Value {
+    json!({ "scanlists": [] })
+}
+
+pub fn default_trunking_value() -> serde_json::Value {
+    json!({ "imports": [], "sites": [], "talkgroups": [] })
+}
+
+pub fn default_decoders_value() -> serde_json::Value {
+    json!({ "decoders": [] })
 }
 
 pub fn default_header_panel_value() -> serde_json::Value {
@@ -131,6 +155,9 @@ mod tests {
         assert!(paths.dir.ends_with("overlays"));
         assert!(paths.markers.exists(), "markers.json should exist");
         assert!(paths.bands.exists(), "bands.json should exist");
+        assert!(paths.scanlists.exists(), "scanlists.json should exist");
+        assert!(paths.trunking.exists(), "trunking.json should exist");
+        assert!(paths.decoders.exists(), "decoders.json should exist");
         assert!(
             paths.header_panel.exists(),
             "header_panel.json should exist"
@@ -144,6 +171,27 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&paths.bands).unwrap()).unwrap();
         let bands_arr = bands.get("bands").and_then(|v| v.as_array()).unwrap();
         assert!(!bands_arr.is_empty(), "default bands should not be empty");
+
+        let scanlists: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&paths.scanlists).unwrap()).unwrap();
+        assert!(
+            scanlists.get("scanlists").and_then(|v| v.as_array()).is_some(),
+            "scanlists.json should contain scanlists array"
+        );
+
+        let trunking: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&paths.trunking).unwrap()).unwrap();
+        assert!(
+            trunking.get("imports").and_then(|v| v.as_array()).is_some(),
+            "trunking.json should contain imports array"
+        );
+
+        let decoders: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&paths.decoders).unwrap()).unwrap();
+        assert!(
+            decoders.get("decoders").and_then(|v| v.as_array()).is_some(),
+            "decoders.json should contain decoders array"
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

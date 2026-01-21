@@ -46,7 +46,10 @@ async fn handle(socket: ws::WebSocket, state: Arc<AppState>, _ip_guard: crate::s
                         poisoned.into_inner()
                     }
                 };
-                snapshot.insert(format!("{rx_id}:{}", entry.unique_id), (p.l, p.m, p.r));
+                snapshot.insert(
+                    format!("{rx_id}:{}", entry.unique_id),
+                    (p.visual_l, p.visual_m, p.visual_r),
+                );
             }
         }
         initial.signal_changes = Some(snapshot);

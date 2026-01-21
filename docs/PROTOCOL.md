@@ -23,6 +23,9 @@ On `/audio` and `/waterfall`, the first WebSocket message is a JSON object conta
 - `overlap`, `fft_overlap` (both `fft_size/2` for the 50 percent overlap model)
 - `markers` (stringified JSON; optional file `config/overlays/markers.json`)
 - `bands` (stringified JSON; optional file `config/overlays/bands.json`)
+- `scanlists` (stringified JSON; optional file `config/overlays/scanlists.json`)
+- `trunking` (stringified JSON; optional file `config/overlays/trunking.json`)
+- `decoders` (stringified JSON; optional file `config/overlays/decoders.json`)
 
 This settings message may be sent again later (for example after a receiver switch via `cmd = "receiver"`). The frontend expects a settings message before any subsequent binary stream restart.
 
@@ -33,12 +36,14 @@ Clients send JSON objects with `cmd`:
 - `window` (`l`, `r`, optional `m`, optional `level`)
 - `demodulation` (`demodulation`)
 - `mute` (`mute`)
+- `audio_override` (`enabled`, optional `l`, optional `r`, optional `m`)
 - `squelch` (`enabled`)
 - `agc` (`speed`, optional `attack`, optional `release`)
 - `chat` (`username`, `message`, optional `user_id`, optional `reply_to_id`, optional `reply_to_username`)
 
 Notes:
 - For `/audio`, `m` is the tuned center bin and may be outside the selected window (for example SSB low-cut windows like USB `+100..+2800 Hz` or LSB `-2800..-100 Hz` relative to `m`).
+- `audio_override` lets a client keep a visual tuning window (waterfall) while demodulating audio from a separate window (for scanlists). When `enabled: true`, `l`/`r`/`m` are required and the server uses them for audio demodulation without updating the visual window. When `enabled: false`, audio returns to the visual window.
 
 ## `/waterfall` binary frames
 
